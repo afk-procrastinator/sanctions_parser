@@ -1,0 +1,42 @@
+<example_1>
+<raw_1>
+WEHBE, Mohamad (a.k.a. WAHBI, Muhammad), Bedfordview, Ekurhuleni, South Africa; 25 Sandhurst Vista, 13 Riepen Ave, Riepen Park, Sandton 2196, South Africa; DOB 14 Apr 1992; POB Lebanon; nationality Lebanon; Gender Male; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 2654120 (Lebanon) expires 22 Oct 2018; Identification Number 9204146485189 (South Africa) (individual) [SDGT] (Linked To: AHMAD, Firas Nazem). 
+</raw_1>
+<structured_1>
+{
+    "name": "WEHBE, Mohamad",
+    "notes": "(a.k.a. WAHBI, Muhammad), Bedfordview, Ekurhuleni, South Africa; 25 Sandhurst Vista, 13 Riepen Ave, Riepen Park, Sandton 2196, South Africa; DOB 14 Apr 1992; POB Lebanon; nationality Lebanon; Gender Male; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Passport 2654120 (Lebanon) expires 22 Oct 2018; Identification Number 9204146485189 (South Africa) (individual) [SDGT] (Linked To: AHMAD, Firas Nazem).",
+    "nationality": "Lebanon",
+    "category": "Individual",
+    "Regime": ["SDGT"],
+    "issue": false
+}
+</structured_1>
+</example_1>
+<example_2>
+<raw_2>
+KHAKI, Reza (Arabic: خاکی رضا), Iran; DOB 01 Aug 1970; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; Passport M38549339 (Iran) expires 05 Nov 2021; National ID No. 1199127795 (Iran) (individual) [NPWMD] [IFSR] (Linked To: QODS AVIATION INDUSTRIES). 
+</raw_2>
+<structured_2>
+{
+    "name": "KHAKI, Reza",
+    "notes": "(Arabic: خاکی رضا), Iran; DOB 01 Aug 1970; nationality Iran; Additional Sanctions Information - Subject to Secondary Sanctions; Gender Male; Passport M38549339 (Iran) expires 05 Nov 2021; National ID No. 1199127795 (Iran) (individual) [NPWMD] [IFSR] (Linked To: QODS AVIATION INDUSTRIES). ",
+    "nationality": "Iran",
+    "category": "Individual",
+    "Regime": ["SDGT", "IFSR"],
+    "issue": false
+}
+</structured_2>
+</example_2>
+
+<instructions>
+You will be converting entires from the OFAC's SDN list into a parseable JSON format. You can see examples of how to convert the raw data into JSON format above. Your output should be ONLY the JSON output, nothing else at all. 
+
+The first column, `name`, should only include the first name mentioned, not aliases. If multiple nationalities are also mentioned, only list the first one. If you run into any issues or errors at all, turn the `issue` field to true. 
+
+Follow the instructions above carefully, and use the examples to see how to find the information. Then, provide the output for the raw data below.
+</instructions>
+
+<raw_data>
+{{RAW_DATA}}
+</raw_data>
