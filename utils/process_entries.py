@@ -1,6 +1,6 @@
 import re
-from scrape_sanctions import scrape_sanctions_update
-from parse_sanctions import parse_sanctions_text
+from utils.scrape_sanctions import scrape_sanctions_update
+from utils.parse_sanctions import parse_sanctions_text
 import anthropic
 import json
 from dotenv import load_dotenv
@@ -10,7 +10,18 @@ import csv
 
 # Load environment variables
 load_dotenv()
-client = anthropic.Anthropic()
+
+# Initialize the Anthropic client with proper API key handling
+try:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Warning: ANTHROPIC_API_KEY not found in environment variables")
+        client = None
+    else:
+        client = anthropic.Anthropic(api_key=api_key)
+except Exception as e:
+    print(f"Error initializing Anthropic client: {e}")
+    client = None
 
 def extract_regimes(text):
     """
@@ -76,9 +87,29 @@ def extract_entries(text):
 
 def load_prompt_template():
     """Load the prompt template from the file"""
-    with open('prompts/SDN_individuals.txt', 'r') as f:
-        content = f.read()
-        return content  # Return the entire template including examples
+    try:
+        # Attempt to open the prompt file from the project root
+        with open('prompts/SDN_individuals.txt', 'r') as f:
+            content = f.read()
+            return content  # Return the entire template including examples
+    except FileNotFoundError:
+        # Try with a relative path from the utils directory
+        try:
+            with open('../prompts/SDN_individuals.txt', 'r') as f:
+                content = f.read()
+                return content
+        except FileNotFoundError:
+            # As a last resort, return a basic prompt
+            return """Please extract the following information from the sanctions entry:
+            - Name
+            - Category (Individual, Entity, etc.)
+            - Nationality 
+            - Regimes/Programs
+            
+            Format as JSON. 
+            
+            Raw Data:
+            {{RAW_DATA}}"""
 
 def extract_json_from_response(response_text):
     """
@@ -166,21 +197,37 @@ def process_entry(entry_text, category):
         dict: Structured information about the entry
     """
     try:
+        # Debug API key
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        #print(f"API key exists: {bool(api_key)}")
+        #print(f"API key prefix: {api_key[:10]}...")
+        
+        # Check if client is properly initialized
+        if client is None:
+            raise Exception("Anthropic client is not initialized. Check your API key.")
+            
         # Load the prompt template
         prompt_template = load_prompt_template()
         
         # Create the full prompt with examples and raw data
         prompt = prompt_template.replace('{{RAW_DATA}}', entry_text)
         
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=1000,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        # Get the response text
-        response_text = message.content[0].text.strip()
+        try:            
+            # Now try the actual call
+            message = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=1000,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            # Get the response text
+            response_text = message.content[0].text.strip()
+            #print("Message received successfully")
+        except Exception as api_error:
+            print(f"API Error details: {str(api_error)}")
+            print(f"Error type: {type(api_error)}")
+            raise Exception(f"Failed to call Anthropic API: {str(api_error)}")
         
         # Try to parse the JSON response
         try:

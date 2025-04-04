@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file, session
-from scrape_sanctions import scrape_sanctions_update
-from parse_sanctions import parse_sanctions_text
-from process_entries import extract_entries, process_entry, extract_regimes
+from utils.scrape_sanctions import scrape_sanctions_update
+from utils.parse_sanctions import parse_sanctions_text
+from utils.process_entries import extract_entries, process_entry, extract_regimes
 import os
 import pandas as pd
 import json
@@ -22,7 +22,12 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session timeout in seconds
 
 # Configure Anthropic client if key is available
 try:
-    client = anthropic.Anthropic()
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("Warning: ANTHROPIC_API_KEY not found in environment variables")
+        client = None
+    else:
+        client = anthropic.Anthropic(api_key=api_key)
 except Exception as e:
     print(f"Could not initialize Anthropic client: {e}")
     client = None
@@ -93,10 +98,10 @@ def index():
             result_hash = session.get('result_hash')
             url = session.get('url', '')
             
-            if not result_hash:
-                return render_template('index.html', 
-                                      error="Session expired. Please start over.",
-                                      step='initial')
+            #if not result_hash:
+            #    return render_template('index.html', 
+            #                          error="Session expired. Please start over.",
+            #                          step='initial')
             
             # Get data from cache
             result = cache.get(f"result_{result_hash}", "")
@@ -122,10 +127,10 @@ def index():
             result_hash = session.get('result_hash')
             url = session.get('url', '')
             
-            if not result_hash:
-                return render_template('index.html', 
-                                      error="Session expired. Please start over.",
-                                      step='initial')
+            #if not result_hash:
+            #    return render_template('index.html', 
+            #                          error="Session expired. Please start over.",
+            #                          step='initial')
             
             # Get cached data
             result = cache.get(f"result_{result_hash}", "")
@@ -144,7 +149,16 @@ def index():
             # Process each entry using the existing function
             processed_data = []
             
-            if client and entries:
+            # Check if Anthropic client is available
+            if client is None:
+                error_msg = "Anthropic API key is invalid or not configured. Check your .env file."
+                print(error_msg)
+                return render_template('index.html', 
+                                      error=error_msg,
+                                      url=url,
+                                      step='confirm')
+            
+            if entries:
                 try:
                     # Process each category and entry in batches
                     for category, entry_list in entries.items():
@@ -178,8 +192,12 @@ def index():
                                 })
                 except Exception as e:
                     print(f"Error in processing entries: {e}")
+                    return render_template('index.html', 
+                                          error=f"Error processing entries: {str(e)}",
+                                          url=url,
+                                          step='confirm')
             
-            # If no client or processing failed, use demo data
+            # If processing failed, use demo data
             if not processed_data:
                 processed_data = [
                     {"name": "Example Person", "nationality": "Country", "category": "Individual", "Regime": ["Program1", "Program2"]},
@@ -201,9 +219,10 @@ def index():
 @app.route('/download/<format_type>')
 def download(format_type):
     result_hash = session.get('result_hash')
+    url = session.get('url', '')
     
-    if not result_hash:
-        return "Session expired, please start over", 400
+    #if not result_hash:
+    #    return "Session expired, please start over", 400
     
     processed_key = f"processed_{result_hash}"
     processed_data = cache.get(processed_key, [])
@@ -221,16 +240,59 @@ def download(format_type):
             output.write(cache[csv_key].encode('utf-8'))
             output.seek(0)
         else:
-            # Convert to DataFrame
-            df = pd.DataFrame(processed_data)
-            
-            # Format regimes as string
-            if 'Regime' in df.columns:
-                df['Regime'] = df['Regime'].apply(lambda x: '|'.join(x) if isinstance(x, list) else x)
-            
-            # Create in-memory CSV
+            # Create in-memory CSV file that matches the process_entries.py format
             output = io.StringIO()
-            df.to_csv(output, index=False)
+            import csv as csv_module
+            writer = csv_module.writer(output)
+            
+            # Write header - must match process_entries.py exactly
+            writer.writerow(['Date', 'Action', 'Name', 'Additional information', 'Country', 'Category', 'Regime'])
+            
+            # Extract date from URL if last 8 characters are digits (YYYYMMDD format)
+            date = ""
+            if url and url[-8:].isdigit():
+                date = url[-8:]
+            
+            # Write data rows using the same logic as in process_entries.py
+            for entry in processed_data:
+                # Get category and determine action
+                category = entry.get('category', '')
+                # Determine action based on category
+                action = "Delisting" if category.lower() in ["deletion", "deletions"] else "Designation"
+                
+                # Skip entries categorized as "change" or "changes"
+                if category.lower() in ["change", "changes"]:
+                    continue
+                
+                # Extract nationality/country
+                country = entry.get('nationality', '')
+                
+                # Get name
+                name = entry.get('name', '')
+                
+                # Get additional information (notes)
+                additional_info = entry.get('notes', '')
+                
+                # Standardize category to one of the accepted values
+                raw_category = entry.get('category', category.capitalize())
+                if raw_category.lower() in ['individual', 'individuals', 'person', 'persons']:
+                    entry_category = 'Individual'
+                elif raw_category.lower() in ['entity', 'entities', 'organization', 'organisations', 'organizations']:
+                    entry_category = 'Entity'
+                elif raw_category.lower() in ['vessel', 'vessels', 'ship', 'ships']:
+                    entry_category = 'Vessel'
+                elif raw_category.lower() in ['aircraft', 'plane', 'planes', 'airplane', 'airplanes']:
+                    entry_category = 'Aircraft'
+                else:
+                    # Default to Entity if not one of the standard categories
+                    entry_category = 'Entity'
+                
+                # Get regimes as comma-separated string
+                regimes = ', '.join(entry.get('Regime', []))
+                
+                # Write row
+                writer.writerow([date, action, name, additional_info, country, entry_category, regimes])
+            
             mem_val = output.getvalue()
             
             # Cache the CSV

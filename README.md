@@ -49,15 +49,3 @@ Content-Type: application/json
     "url": "https://example.com/sanctions-page"
 }
 ```
-
-## Deployment Options
-
-To deploy this application to the web, you have several options:
-
-1. **Heroku**: Free tier available, easy deployment
-2. **Railway**: Modern platform with free tier
-3. **PythonAnywhere**: Free tier, specifically for Python apps
-4. **AWS Elastic Beanstalk**: More advanced, scalable solution
-5. **Vercel**: Simple deployment for web applications
-
-See the deployment guide in the documentation for step-by-step instructions. 

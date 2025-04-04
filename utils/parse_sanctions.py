@@ -1,5 +1,5 @@
 import re
-from scrape_sanctions import scrape_sanctions_update
+from utils.scrape_sanctions import scrape_sanctions_update
 
 def parse_sanctions_text(text):
     """

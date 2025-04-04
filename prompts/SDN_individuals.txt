@@ -28,11 +28,58 @@ KHAKI, Reza (Arabic: خاکی رضا), Iran; DOB 01 Aug 1970; nationality Iran; 
 }
 </structured_2>
 </example_2>
+<example_3>
+<raw_3>
+AREN SHIP MANAGEMENT (a.k.a. M/S AREN SHIP MANAGEMENT), BH Tower, 36A, Road No 7, Ranavola, Dhaka 1230, Bangladesh; Organization Established Date 2019; Identification Number IMO 6088476; Business Registration Number P-43221 (Bangladesh) [IRAN-EO13902]. 
+</raw_3>
+<structured_3>
+{
+    "name": "AREN SHIP MANAGEMENT",
+    "notes": "(a.k.a. M/S AREN SHIP MANAGEMENT), BH Tower, 36A, Road No 7, Ranavola, Dhaka 1230, Bangladesh; Organization Established Date 2019; Identification Number IMO 6088476; Business Registration Number P-43221 (Bangladesh) [IRAN-EO13902]",
+    "nationality": "Bangladesh",
+    "category": "Entity",
+    "Regime": ["IRAN-EO13902"],
+    "issue": false
+}
+</structured_3>
+</example_3>
+
+<example_4>
+<raw_4>
+AM ASIA M6 LTD, 31st Floor, Tower Two, Times Square, 1, Matheson Street, Causeway Bay, Hong Kong, China; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Organization Established Date 24 Jul 2019; Identification Number IMO 6187322; Company Number 2855903 (Hong Kong); Business Registration Number 70990857 (Hong Kong) [SDGT] (Linked To: AL-JAMAL, Sa'id Ahmad Muhammad).
+</raw_4>
+<structured_4>
+{
+    "name": "AM ASIA M6 LTD",
+    "notes": "31st Floor, Tower Two, Times Square, 1, Matheson Street, Causeway Bay, Hong Kong, China; Secondary sanctions risk: section 1(b) of Executive Order 13224, as amended by Executive Order 13886; Organization Established Date 24 Jul 2019; Identification Number IMO 6187322; Company Number 2855903 (Hong Kong); Business Registration Number 70990857 (Hong Kong) [SDGT] (Linked To: AL-JAMAL, Sa'id Ahmad Muhammad).",
+    "nationality": "Hong Kong",
+    "category": "Entity",
+    "Regime": ["SDGT"],
+    "issue": false
+}
+</structured_4>
+</example_4>
+
+<example5>
+<raw_5>
+CORONA FUN (3E5355) Crude Oil Tanker Panama flag; Vessel Registration Identification IMO 9276573; MMSI 352003958 (vessel) [IRAN-EO13902] (Linked To: SUN SCIENCE INTERNATIONAL CO., LIMITED). 
+</raw_5>
+<structured_5>
+{
+    "name": "CORONA FUN",
+    "notes": "(3E5355) Crude Oil Tanker Panama flag; Vessel Registration Identification IMO 9276573; MMSI 352003958 (vessel) [IRAN-EO13902] (Linked To: SUN SCIENCE INTERNATIONAL CO., LIMITED)",
+    "nationality": "Iran",
+    "category": "Vessel",
+    "Regime": ["IRAN-EO13902"],
+    "issue": false
+}
+</structured_5>
+</example_5>
 
 <instructions>
 You will be converting entires from the OFAC's SDN list into a parseable JSON format. You can see examples of how to convert the raw data into JSON format above. Your output should be ONLY the JSON output, nothing else at all. 
 
-The first column, `name`, should only include the first name mentioned, not aliases. If multiple nationalities are also mentioned, only list the first one. If you run into any issues or errors at all, turn the `issue` field to true. 
+THe first field, 
 
 Follow the instructions above carefully, and use the examples to see how to find the information. Then, provide the output for the raw data below.
 </instructions>
