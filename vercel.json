@@ -9,10 +9,19 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "app.py",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
     }
   ],
   "env": {
     "PYTHONPATH": "."
+  },
+  "functions": {
+    "app.py": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
   }
 } 

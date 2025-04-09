@@ -124,14 +124,13 @@
                 <h5 class="mb-0">Enter URL to Scrape</h5>
             </div>
             <div class="card-body">
-                <form method="POST" action="/" class="show-loading-on-submit">
+                <form id="scrapeForm" class="show-loading-on-submit">
                     <div class="mb-3">
                         <label for="url" class="form-label">URL</label>
                         <input type="url" class="form-control" id="url" name="url" required
                                placeholder="https://ofac.treasury.gov/recent-actions/..." 
                                value="https://ofac.treasury.gov/recent-actions/20250313">
                     </div>
-                    <input type="hidden" name="action" value="scrape">
                     <button type="submit" class="btn btn-primary">Scrape URL</button>
                 </form>
             </div>
@@ -360,26 +359,89 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Show loading overlay when form is submitted
         document.addEventListener('DOMContentLoaded', function() {
             const forms = document.querySelectorAll('.show-loading-on-submit');
             const overlay = document.getElementById('loading-overlay');
             const loadingMessage = document.getElementById('loading-message');
             
-            forms.forEach(form => {
-                form.addEventListener('submit', function(e) {
-                    const action = this.querySelector('input[name="action"]').value;
+            // Handle scrape form submission
+            const scrapeForm = document.getElementById('scrapeForm');
+            if (scrapeForm) {
+                scrapeForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
                     
-                    if (action === 'scrape') {
-                        loadingMessage.textContent = 'Scraping content from URL...';
-                    } else if (action === 'confirm') {
-                        loadingMessage.textContent = 'Processing entries...';
-                    } else if (action === 'process') {
-                        loadingMessage.textContent = 'Processing with LLM, this may take a minute...';
-                    }
-                    
+                    const url = document.getElementById('url').value;
+                    loadingMessage.textContent = 'Starting scraping process...';
                     overlay.style.display = 'flex';
+                    
+                    try {
+                        // Start the scraping job
+                        const response = await fetch('/api/start-scrape', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ url: url })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                        
+                        // Start polling for status
+                        pollStatus(data.job_id);
+                    } catch (error) {
+                        overlay.style.display = 'none';
+                        alert('Error starting scrape: ' + error.message);
+                    }
                 });
+            }
+            
+            // Function to poll job status
+            async function pollStatus(jobId) {
+                try {
+                    const response = await fetch(`/api/check-status/${jobId}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'completed') {
+                        // Store the result hash in session
+                        sessionStorage.setItem('result_hash', data.result_hash);
+                        sessionStorage.setItem('url', data.url);
+                        
+                        // Redirect to the overview page
+                        window.location.href = '/?step=overview';
+                    } else if (data.status === 'error') {
+                        overlay.style.display = 'none';
+                        alert('Error during scraping: ' + data.error);
+                    } else {
+                        // Update loading message based on status
+                        loadingMessage.textContent = `Status: ${data.status}...`;
+                        // Poll again after 2 seconds
+                        setTimeout(() => pollStatus(jobId), 2000);
+                    }
+                } catch (error) {
+                    overlay.style.display = 'none';
+                    alert('Error checking status: ' + error.message);
+                }
+            }
+            
+            // Handle other form submissions
+            forms.forEach(form => {
+                if (form.id !== 'scrapeForm') {
+                    form.addEventListener('submit', function(e) {
+                        const action = this.querySelector('input[name="action"]').value;
+                        
+                        if (action === 'confirm') {
+                            loadingMessage.textContent = 'Processing entries...';
+                        } else if (action === 'process') {
+                            loadingMessage.textContent = 'Processing with LLM, this may take a minute...';
+                        }
+                        
+                        overlay.style.display = 'flex';
+                    });
+                }
             });
             
             // Hide on page load if coming back to a page after form submission

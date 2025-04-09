@@ -13,6 +13,7 @@ import anthropic
 import threading
 import functools
 import time
+import uuid
 
 # Load environment variables
 load_dotenv()
@@ -33,8 +34,17 @@ except Exception as e:
     print(f"Could not initialize Anthropic client: {e}")
     client = None
 
-# Simple in-memory cache
+# Simple in-memory cache and job tracking
 cache = {}
+jobs = {}
+
+def login_required(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 def timed_lru_cache(seconds=600, maxsize=128):
     """LRU cache decorator with expiration"""
@@ -58,13 +68,91 @@ def cached_scrape_sanctions_update(url):
     """Cached version of the scrape function"""
     return scrape_sanctions_update(url)
 
-def login_required(f):
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
+def process_job(job_id, url):
+    """Background processing function"""
+    try:
+        # Update job status
+        jobs[job_id]['status'] = 'scraping'
+        
+        # Scrape the data
+        result = scrape_sanctions_update(url)
+        
+        # Store in cache
+        result_hash = hash(result)
+        cache_key = f"result_{result_hash}"
+        cache[cache_key] = result
+        
+        # Parse counts
+        counts = parse_sanctions_text(result)
+        cache[f"counts_{result_hash}"] = counts
+        
+        # Extract entries
+        entries = extract_entries(result)
+        cache[f"entries_{result_hash}"] = entries
+        
+        # Update job status
+        jobs[job_id].update({
+            'status': 'completed',
+            'result_hash': result_hash,
+            'url': url,
+            'counts': counts
+        })
+        
+    except Exception as e:
+        jobs[job_id]['status'] = 'error'
+        jobs[job_id]['error'] = str(e)
+
+@app.route('/api/start-scrape', methods=['POST'])
+@login_required
+def start_scrape():
+    """Start a new scraping job"""
+    url = request.json.get('url')
+    if not url:
+        return jsonify({'error': 'URL is required'}), 400
+    
+    # Generate a unique job ID
+    job_id = str(uuid.uuid4())
+    
+    # Initialize job
+    jobs[job_id] = {
+        'status': 'pending',
+        'url': url,
+        'started_at': datetime.now().isoformat()
+    }
+    
+    # Start background processing
+    thread = threading.Thread(target=process_job, args=(job_id, url))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'job_id': job_id})
+
+@app.route('/api/check-status/<job_id>')
+@login_required
+def check_status(job_id):
+    """Check the status of a scraping job"""
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    if job['status'] == 'completed':
+        # Store in session for the main page
+        session['url'] = job['url']
+        session['result_hash'] = job['result_hash']
+        
+        return jsonify({
+            'status': 'completed',
+            'url': job['url'],
+            'counts': job['counts']
+        })
+    
+    elif job['status'] == 'error':
+        return jsonify({
+            'status': 'error',
+            'error': job.get('error', 'Unknown error')
+        })
+    
+    return jsonify({'status': job['status']})
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -94,162 +182,143 @@ def logout():
     session.clear()  # Clear all session data
     return redirect(url_for('login'))
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET'])
 @login_required
 def index():
-    if request.method == 'POST':
-        url = request.form.get('url')
-        action = request.form.get('action', '')
+    step = request.args.get('step', 'initial')
+    
+    if step == 'overview':
+        # Get data from session
+        url = session.get('url')
+        result_hash = session.get('result_hash')
         
-        if url and action == 'scrape':
-            # Step 1: Scrape the sanctions data (use cached version if available)
-            try:
-                result = cached_scrape_sanctions_update(url)
-                
-                # Store minimal data in session
-                session['url'] = url
-                session['result_hash'] = hash(result)  # Store hash instead of full content
-                
-                # Cache the actual data
-                cache_key = f"result_{hash(result)}"
-                cache[cache_key] = result
-                
-                # Parse the text to get counts
-                counts = parse_sanctions_text(result)
-                
-                # Cache the counts
-                cache_key = f"counts_{hash(result)}"
-                cache[cache_key] = counts
-                
-                return render_template('index.html', 
-                                      result=result, 
-                                      url=url,
-                                      counts=counts,
-                                      step='overview')
-            except Exception as e:
-                return render_template('index.html', 
-                                      error=f"Error scraping URL: {str(e)}",
-                                      step='initial')
-                                  
-        elif action == 'confirm':
-            # Step 2: Show confirmation
-            result_hash = session.get('result_hash')
-            url = session.get('url', '')
-            
-            #if not result_hash:
-            #    return render_template('index.html', 
-            #                          error="Session expired. Please start over.",
-            #                          step='initial')
-            
-            # Get data from cache
-            result = cache.get(f"result_{result_hash}", "")
-            counts = cache.get(f"counts_{result_hash}", {})
-            
-            # Extract entries by category (only if not already cached)
-            entries_key = f"entries_{result_hash}"
-            if entries_key not in cache:
-                entries = extract_entries(result)
-                cache[entries_key] = entries
-            else:
-                entries = cache[entries_key]
-            
+        if not result_hash:
             return render_template('index.html', 
-                                  result=result, 
-                                  url=url,
-                                  counts=counts,
-                                  entries=entries,
-                                  step='confirm')
-                                  
-        elif action == 'process':
-            # Step 3: Process with LLM
-            result_hash = session.get('result_hash')
-            url = session.get('url', '')
-            
-            #if not result_hash:
-            #    return render_template('index.html', 
-            #                          error="Session expired. Please start over.",
-            #                          step='initial')
-            
-            # Get cached data
-            result = cache.get(f"result_{result_hash}", "")
-            entries = cache.get(f"entries_{result_hash}", {})
-            
-            # Check if already processed
-            processed_key = f"processed_{result_hash}"
-            if processed_key in cache:
-                processed_data = cache[processed_key]
-                return render_template('index.html', 
-                                      result=result, 
-                                      url=url,
-                                      processed_data=processed_data,
-                                      step='processed')
-            
-            # Process each entry using the existing function
-            processed_data = []
-            
-            # Check if Anthropic client is available
-            if client is None:
-                error_msg = "Anthropic API key is invalid or not configured. Check your .env file."
-                print(error_msg)
-                return render_template('index.html', 
-                                      error=error_msg,
-                                      url=url,
-                                      step='confirm')
-            
-            if entries:
-                try:
-                    # Process each category and entry in batches
-                    for category, entry_list in entries.items():
-                        for i, entry_text in enumerate(entry_list):
-                            try:
-                                # Skip empty entries
-                                if not entry_text.strip():
-                                    continue
-                                
-                                # Check if individual entry is cached
-                                entry_cache_key = f"entry_{hash(entry_text)}_{category}"
-                                if entry_cache_key in cache:
-                                    processed_entry = cache[entry_cache_key]
-                                else:
-                                    # Process the entry using existing function
-                                    processed_entry = process_entry(entry_text, category)
-                                    # Cache the processed entry
-                                    cache[entry_cache_key] = processed_entry
-                                
-                                processed_data.append(processed_entry)
-                            except Exception as e:
-                                print(f"Error processing entry: {e}")
-                                # Add a fallback entry
-                                processed_data.append({
-                                    "name": entry_text.split(',')[0] if ',' in entry_text else entry_text[:50],
-                                    "nationality": "Unknown",
-                                    "category": category.capitalize(),
-                                    "Regime": extract_regimes(entry_text),
-                                    "issue": True,
-                                    "notes": entry_text
-                                })
-                except Exception as e:
-                    print(f"Error in processing entries: {e}")
-                    return render_template('index.html', 
-                                          error=f"Error processing entries: {str(e)}",
-                                          url=url,
-                                          step='confirm')
-            
-            # If processing failed, use demo data
-            if not processed_data:
-                processed_data = [
-                    {"name": "Example Person", "nationality": "Country", "category": "Individual", "Regime": ["Program1", "Program2"]},
-                    {"name": "Example Entity", "nationality": "Country", "category": "Entity", "Regime": ["Program1"]}
-                ]
-            
-            # Cache the processed results
-            cache[processed_key] = processed_data
-            
+                                  error="Session expired. Please start over.",
+                                  step='initial')
+        
+        # Get data from cache
+        result = cache.get(f"result_{result_hash}", "")
+        counts = cache.get(f"counts_{result_hash}", {})
+        
+        return render_template('index.html', 
+                              result=result, 
+                              url=url,
+                              counts=counts,
+                              step='overview')
+    
+    elif step == 'confirm':
+        # Get data from session
+        result_hash = session.get('result_hash')
+        url = session.get('url', '')
+        
+        if not result_hash:
+            return render_template('index.html', 
+                                  error="Session expired. Please start over.",
+                                  step='initial')
+        
+        # Get data from cache
+        result = cache.get(f"result_{result_hash}", "")
+        counts = cache.get(f"counts_{result_hash}", {})
+        
+        # Extract entries by category (only if not already cached)
+        entries_key = f"entries_{result_hash}"
+        if entries_key not in cache:
+            entries = extract_entries(result)
+            cache[entries_key] = entries
+        else:
+            entries = cache[entries_key]
+        
+        return render_template('index.html', 
+                              result=result, 
+                              url=url,
+                              counts=counts,
+                              entries=entries,
+                              step='confirm')
+    
+    elif step == 'processed':
+        # Get data from session
+        result_hash = session.get('result_hash')
+        url = session.get('url', '')
+        
+        if not result_hash:
+            return render_template('index.html', 
+                                  error="Session expired. Please start over.",
+                                  step='initial')
+        
+        # Get cached data
+        result = cache.get(f"result_{result_hash}", "")
+        entries = cache.get(f"entries_{result_hash}", {})
+        
+        # Check if already processed
+        processed_key = f"processed_{result_hash}"
+        if processed_key in cache:
+            processed_data = cache[processed_key]
             return render_template('index.html', 
                                   result=result, 
                                   url=url,
                                   processed_data=processed_data,
                                   step='processed')
+        
+        # Process each entry using the existing function
+        processed_data = []
+        
+        # Check if Anthropic client is available
+        if client is None:
+            error_msg = "Anthropic API key is invalid or not configured. Check your .env file."
+            print(error_msg)
+            return render_template('index.html', 
+                                  error=error_msg,
+                                  url=url,
+                                  step='confirm')
+        
+        if entries:
+            try:
+                # Process each category and entry in batches
+                for category, entry_list in entries.items():
+                    for i, entry_text in enumerate(entry_list):
+                        try:
+                            # Skip empty entries
+                            if not entry_text.strip():
+                                continue
+                            
+                            # Check if individual entry is cached
+                            entry_cache_key = f"entry_{hash(entry_text)}_{category}"
+                            if entry_cache_key in cache:
+                                processed_entry = cache[entry_cache_key]
+                            else:
+                                # Process the entry using existing function
+                                processed_entry = process_entry(entry_text, category)
+                                # Cache the processed entry
+                                cache[entry_cache_key] = processed_entry
+                            
+                            processed_data.append(processed_entry)
+                        except Exception as e:
+                            print(f"Error processing entry: {e}")
+                            # Add a fallback entry
+                            processed_data.append({
+                                "name": entry_text.split(',')[0] if ',' in entry_text else entry_text[:50],
+                                "nationality": "Unknown",
+                                "category": category.capitalize(),
+                                "Regime": extract_regimes(entry_text),
+                                "issue": True,
+                                "notes": entry_text
+                            })
+            except Exception as e:
+                print(f"Error in processing entries: {e}")
+                return render_template('index.html', 
+                                      error=f"Error processing entries: {str(e)}",
+                                      url=url,
+                                      step='confirm')
+        
+        # Cache the processed results
+        cache[processed_key] = processed_data
+        
+        return render_template('index.html', 
+                              result=result, 
+                              url=url,
+                              processed_data=processed_data,
+                              step='processed')
     
     # Default: show initial form
     return render_template('index.html', step='initial')
