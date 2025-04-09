@@ -176,8 +176,7 @@
                 </div>
                 
                 <div class="action-bar">
-                    <form method="POST" action="/" class="show-loading-on-submit">
-                        <input type="hidden" name="action" value="confirm">
+                    <form id="confirmForm" class="show-loading-on-submit">
                         <button type="submit" class="btn btn-primary">Continue to Processing</button>
                     </form>
                     <a href="/" class="btn btn-outline-secondary">Start Over</a>
@@ -228,8 +227,7 @@
                 </div>
                 
                 <div class="action-bar">
-                    <form method="POST" action="/" class="show-loading-on-submit">
-                        <input type="hidden" name="action" value="process">
+                    <form id="processForm" class="show-loading-on-submit">
                         <button type="submit" class="btn btn-primary">
                             Process with LLM
                         </button>
@@ -399,6 +397,24 @@
                 });
             }
             
+            // Handle confirm form submission
+            const confirmForm = document.getElementById('confirmForm');
+            if (confirmForm) {
+                confirmForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    window.location.href = '/?step=confirm';
+                });
+            }
+            
+            // Handle process form submission
+            const processForm = document.getElementById('processForm');
+            if (processForm) {
+                processForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    window.location.href = '/?step=processed';
+                });
+            }
+            
             // Function to poll job status
             async function pollStatus(jobId) {
                 try {
@@ -429,7 +445,7 @@
             
             // Handle other form submissions
             forms.forEach(form => {
-                if (form.id !== 'scrapeForm') {
+                if (form.id !== 'scrapeForm' && form.id !== 'confirmForm' && form.id !== 'processForm') {
                     form.addEventListener('submit', function(e) {
                         const action = this.querySelector('input[name="action"]').value;
                         
