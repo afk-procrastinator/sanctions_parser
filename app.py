@@ -19,8 +19,12 @@ import uuid
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session timeout in seconds
+# Use a fixed secret key from environment variables, fallback to random if not set
+app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Default to 30 days
+app.config['SESSION_COOKIE_SECURE'] = True  # Only send cookies over HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to cookies
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 
 # Configure Anthropic client if key is available
 try:
@@ -96,6 +100,68 @@ def process_job(job_id, url):
             'result_hash': result_hash,
             'url': url,
             'counts': counts
+        })
+        
+    except Exception as e:
+        jobs[job_id]['status'] = 'error'
+        jobs[job_id]['error'] = str(e)
+
+def process_llm_job(job_id, entries, result_hash):
+    """Background processing function for LLM analysis"""
+    try:
+        # Update job status
+        jobs[job_id]['status'] = 'processing'
+        
+        # Process each entry using the existing function
+        processed_data = []
+        
+        # Check if Anthropic client is available
+        if client is None:
+            raise Exception("Anthropic API key is invalid or not configured. Check your .env file.")
+        
+        if entries:
+            try:
+                # Process each category and entry in batches
+                for category, entry_list in entries.items():
+                    for i, entry_text in enumerate(entry_list):
+                        try:
+                            # Skip empty entries
+                            if not entry_text.strip():
+                                continue
+                            
+                            # Check if individual entry is cached
+                            entry_cache_key = f"entry_{hash(entry_text)}_{category}"
+                            if entry_cache_key in cache:
+                                processed_entry = cache[entry_cache_key]
+                            else:
+                                # Process the entry using existing function
+                                processed_entry = process_entry(entry_text, category)
+                                # Cache the processed entry
+                                cache[entry_cache_key] = processed_entry
+                            
+                            processed_data.append(processed_entry)
+                        except Exception as e:
+                            print(f"Error processing entry: {e}")
+                            # Add a fallback entry
+                            processed_data.append({
+                                "name": entry_text.split(',')[0] if ',' in entry_text else entry_text[:50],
+                                "nationality": "Unknown",
+                                "category": category.capitalize(),
+                                "Regime": extract_regimes(entry_text),
+                                "issue": True,
+                                "notes": entry_text
+                            })
+            except Exception as e:
+                raise Exception(f"Error in processing entries: {str(e)}")
+        
+        # Cache the processed results
+        processed_key = f"processed_{result_hash}"
+        cache[processed_key] = processed_data
+        
+        # Update job status
+        jobs[job_id].update({
+            'status': 'completed',
+            'processed_data': processed_data
         })
         
     except Exception as e:
@@ -456,6 +522,66 @@ def api_scrape():
     # Use cached version if available
     result = cached_scrape_sanctions_update(url)
     return jsonify({"result": result})
+
+@app.route('/api/start-llm', methods=['POST'])
+@login_required
+def start_llm():
+    """Start a new LLM processing job"""
+    # Check if Anthropic client is available
+    if client is None:
+        return jsonify({'error': 'Anthropic API key is not configured. Please check your .env file.'}), 500
+    
+    result_hash = session.get('result_hash')
+    if not result_hash:
+        return jsonify({'error': 'No result hash found in session'}), 400
+    
+    # Get entries from cache
+    entries = cache.get(f"entries_{result_hash}")
+    if not entries:
+        return jsonify({'error': 'No entries found for processing'}), 400
+    
+    # Generate a unique job ID
+    job_id = str(uuid.uuid4())
+    
+    # Initialize job
+    jobs[job_id] = {
+        'status': 'pending',
+        'result_hash': result_hash,
+        'started_at': datetime.now().isoformat()
+    }
+    
+    # Start background processing
+    thread = threading.Thread(target=process_llm_job, args=(job_id, entries, result_hash))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'job_id': job_id})
+
+@app.route('/api/check-llm-status/<job_id>')
+@login_required
+def check_llm_status(job_id):
+    """Check the status of an LLM processing job"""
+    # Check if session is still valid
+    if 'logged_in' not in session:
+        return jsonify({'error': 'Session expired. Please log in again.'}), 401
+        
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    if job['status'] == 'completed':
+        return jsonify({
+            'status': 'completed',
+            'processed_data': job['processed_data']
+        })
+    
+    elif job['status'] == 'error':
+        return jsonify({
+            'status': 'error',
+            'error': job.get('error', 'Unknown error')
+        })
+    
+    return jsonify({'status': job['status']})
 
 # Implement cache management for production use
 @app.route('/admin/clear-cache', methods=['POST'])
