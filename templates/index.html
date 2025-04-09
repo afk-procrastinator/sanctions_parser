@@ -392,11 +392,12 @@
                             throw new Error(data.error);
                         }
                         
-                        // Start polling for status
-                        pollStatus(data.job_id);
+                        // Redirect to overview page with the result hash
+                        window.location.href = `/?step=overview&url=${encodeURIComponent(url)}&result_hash=${data.result_hash}`;
+                        
                     } catch (error) {
+                        alert(`Error: ${error.message}`);
                         overlay.style.display = 'none';
-                        alert('Error starting scrape: ' + error.message);
                     }
                 });
             }
@@ -406,111 +407,29 @@
             if (confirmForm) {
                 confirmForm.addEventListener('submit', function(e) {
                     e.preventDefault();
-                    window.location.href = '/?step=confirm';
+                    
+                    // Get URL and result hash from the current page
+                    const url = new URLSearchParams(window.location.search).get('url');
+                    const result_hash = new URLSearchParams(window.location.search).get('result_hash');
+                    
+                    // Redirect to confirm page
+                    window.location.href = `/?step=confirm&url=${encodeURIComponent(url)}&result_hash=${result_hash}`;
                 });
             }
             
             // Handle process form submission
             const processForm = document.getElementById('processForm');
             if (processForm) {
-                processForm.addEventListener('submit', async function(e) {
+                processForm.addEventListener('submit', function(e) {
                     e.preventDefault();
-                    loadingMessage.textContent = 'Starting LLM processing...';
-                    overlay.style.display = 'flex';
                     
-                    try {
-                        // Start the LLM processing job
-                        const response = await fetch('/api/start-llm', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            }
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.error) {
-                            throw new Error(data.error);
-                        }
-                        
-                        // Start polling for status
-                        pollLLMStatus(data.job_id);
-                    } catch (error) {
-                        overlay.style.display = 'none';
-                        alert('Error starting LLM processing: ' + error.message);
-                    }
+                    // Get URL and result hash from the current page
+                    const url = new URLSearchParams(window.location.search).get('url');
+                    const result_hash = new URLSearchParams(window.location.search).get('result_hash');
+                    
+                    // Redirect to processed page
+                    window.location.href = `/?step=processed&url=${encodeURIComponent(url)}&result_hash=${result_hash}`;
                 });
-            }
-            
-            // Function to poll job status
-            async function pollStatus(jobId) {
-                try {
-                    const response = await fetch(`/api/check-status/${jobId}`);
-                    const data = await response.json();
-                    
-                    if (data.status === 'completed') {
-                        // Store the result hash in session
-                        sessionStorage.setItem('result_hash', data.result_hash);
-                        sessionStorage.setItem('url', data.url);
-                        
-                        // Redirect to the overview page
-                        window.location.href = '/?step=overview';
-                    } else if (data.status === 'error') {
-                        overlay.style.display = 'none';
-                        alert('Error during scraping: ' + data.error);
-                    } else {
-                        // Update loading message based on status
-                        loadingMessage.textContent = `Status: ${data.status}...`;
-                        // Poll again after 2 seconds
-                        setTimeout(() => pollStatus(jobId), 2000);
-                    }
-                } catch (error) {
-                    overlay.style.display = 'none';
-                    alert('Error checking status: ' + error.message);
-                }
-            }
-            
-            // Function to poll LLM job status
-            async function pollLLMStatus(jobId) {
-                try {
-                    const response = await fetch(`/api/check-llm-status/${jobId}`);
-                    const data = await response.json();
-                    
-                    if (data.status === 401) {
-                        // Session expired, redirect to login
-                        window.location.href = '/login';
-                        return;
-                    }
-                    
-                    if (data.error) {
-                        document.getElementById('llmStatus').textContent = `Error: ${data.error}`;
-                        overlay.style.display = 'none';
-                        return;
-                    }
-                    
-                    if (data.status === 'completed') {
-                        document.getElementById('llmStatus').textContent = 'Processing complete!';
-                        document.getElementById('llmResults').textContent = JSON.stringify(data.processed_data, null, 2);
-                        document.getElementById('llmResults').style.display = 'block';
-                        overlay.style.display = 'none';
-                        // Redirect to results page
-                        window.location.href = '/?step=processed';
-                    } else if (data.status === 'error') {
-                        document.getElementById('llmStatus').textContent = `Error: ${data.error}`;
-                        overlay.style.display = 'none';
-                    } else {
-                        document.getElementById('llmStatus').textContent = `Status: ${data.status}`;
-                        setTimeout(() => pollLLMStatus(jobId), 2000);
-                    }
-                } catch (error) {
-                    overlay.style.display = 'none';
-                    alert('Error checking LLM status: ' + error.message);
-                }
-            }
-            
-            // Hide on page load if coming back to a page after form submission
-            if (document.readyState === 'complete') {
-                overlay.style.display = 'none';
             }
         });
     </script>
