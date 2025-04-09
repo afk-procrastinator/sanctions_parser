@@ -1,6 +1,43 @@
 import re
 from utils.scrape_sanctions import scrape_sanctions_update
 
+def normalize_category(category):
+    """
+    Normalize category names to standard forms.
+    
+    Args:
+        category (str): Raw category name from the text
+        
+    Returns:
+        str: Normalized category name
+    """
+    # Convert to lowercase for consistent comparison
+    category = category.lower()
+    
+    # Category mapping to standardize categories
+    category_mapping = {
+        'individual': 'Individual',
+        'individuals': 'Individual',
+        'person': 'Individual',
+        'persons': 'Individual',
+        'entity': 'Entity',
+        'entities': 'Entity',
+        'organization': 'Entity',
+        'organizations': 'Entity',
+        'company': 'Entity',
+        'companies': 'Entity',
+        'vessel': 'Vessel',
+        'vessels': 'Vessel',
+        'ship': 'Vessel',
+        'ships': 'Vessel',
+        'aircraft': 'Aircraft',
+        'aircrafts': 'Aircraft',
+        'plane': 'Aircraft',
+        'planes': 'Aircraft'
+    }
+    
+    return category_mapping.get(category, category.capitalize())
+
 def parse_sanctions_text(text):
     """
     Parse sanctions update text and count entries by category.
@@ -18,21 +55,22 @@ def parse_sanctions_text(text):
     current_category = None
     current_count = 0
     
-    # Regular expression to match category headers - now handles both singular and plural forms
-    category_pattern = r"The following (\w+)(?:s)? (?:has|have) been"
+    # Regular expression to match category headers - handles various formats
+    category_pattern = r"The following (\w+)(?:s)? (?:has|have) been (?:added|removed|modified|updated)"
     # Pattern to match the start of an entry (typically starts with a name or identifier)
     entry_pattern = r"^[A-Z0-9]"  # Entries typically start with capital letters or numbers
     
     for line in lines:
         # Check for category headers
-        category_match = re.search(category_pattern, line)
+        category_match = re.search(category_pattern, line, re.IGNORECASE)
         if category_match:
             # If we were counting a previous category, save its count
             if current_category:
                 results[current_category] = current_count
             
             # Start counting new category
-            current_category = category_match.group(1)
+            raw_category = category_match.group(1)
+            current_category = normalize_category(raw_category)
             current_count = 0
             continue
             

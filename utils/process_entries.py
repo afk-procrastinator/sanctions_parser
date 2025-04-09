@@ -1,6 +1,6 @@
 import re
 from utils.scrape_sanctions import scrape_sanctions_update
-from utils.parse_sanctions import parse_sanctions_text
+from utils.parse_sanctions import parse_sanctions_text, normalize_category
 import anthropic
 import json
 from dotenv import load_dotenv
@@ -116,18 +116,17 @@ def extract_json_from_response(response_text):
     Carefully extract JSON from Claude's response, handling various formats.
     """
     # Clean up the text first
-    cleaned = response_text.replace('```json', '').replace('```', '')
-    # Remove any non-ASCII characters
-    cleaned = ''.join(char for char in cleaned if ord(char) < 128)
-    # Replace any escaped newlines or tabs
-    cleaned = cleaned.replace('\\n', ' ').replace('\\t', ' ')
-    # Replace multiple whitespace with single space
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    # Remove any whitespace around colons in key-value pairs
-    cleaned = re.sub(r'\s*:\s*', ':', cleaned)
-    cleaned = cleaned.strip()
+    cleaned = response_text.strip()
     
-    # Try to find a JSON object
+    # First try to parse the entire response as JSON
+    try:
+        result = json.loads(cleaned)
+        # If we got here, it's valid JSON
+        return result
+    except json.JSONDecodeError:
+        pass
+    
+    # If that fails, try to find JSON within the text
     try:
         # Find the outermost matching braces
         start_idx = cleaned.find('{')
@@ -153,20 +152,29 @@ def extract_json_from_response(response_text):
         # Extract the JSON string
         json_str = cleaned[start_idx:end_idx]
         
-        # Additional cleaning of the JSON string
-        # Fix common issues with quotes
-        json_str = re.sub(r'(?<!\\)"', '\\"', json_str)  # Escape unescaped quotes
-        json_str = re.sub(r'\\+"', '"', json_str)  # Fix multiple escapes
-        # Ensure property names are properly quoted
-        json_str = re.sub(r'(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_str)
-        
         # Parse the JSON
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as je:
-            raise
-    
+        result = json.loads(json_str)
+        
+        # Check if any string fields contain JSON
+        for key in result:
+            if isinstance(result[key], str) and result[key].strip().startswith('{'):
+                try:
+                    # Try to parse the nested JSON
+                    nested_json = json.loads(result[key])
+                    # If it has the same structure as our expected result, use it
+                    if all(k in nested_json for k in ['name', 'nationality', 'category', 'Regime']):
+                        result = nested_json
+                        break
+                except json.JSONDecodeError:
+                    continue
+        
+        return result
+        
     except (ValueError, json.JSONDecodeError) as e:
+        print(f"JSON parsing error: {str(e)}")
+        print("Original response:")
+        print(response_text)
+        
         # Fallback: Try to extract individual fields
         try:
             # Look for name field
@@ -197,10 +205,19 @@ def process_entry(entry_text, category):
         dict: Structured information about the entry
     """
     try:
+        # Normalize the category
+        normalized_category = normalize_category(category)
+        
+        print(f"\nProcessing entry for category: {normalized_category}")
+        print("-" * 50)
+        print("Raw entry text:")
+        print(entry_text)
+        print("-" * 50)
+        
         # Debug API key
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        #print(f"API key exists: {bool(api_key)}")
-        #print(f"API key prefix: {api_key[:10]}...")
+        api_key = os.getenv("ANthropic_API_KEY")
+        if not api_key:
+            print("Warning: ANTHROPIC_API_KEY not found in environment variables")
         
         # Check if client is properly initialized
         if client is None:
@@ -208,14 +225,21 @@ def process_entry(entry_text, category):
             
         # Load the prompt template
         prompt_template = load_prompt_template()
+        print("\nUsing prompt template:")
+        print(prompt_template)
+        print("-" * 50)
         
         # Create the full prompt with examples and raw data
         prompt = prompt_template.replace('{{RAW_DATA}}', entry_text)
+        print("\nFull prompt being sent to API:")
+        print(prompt)
+        print("-" * 50)
         
         try:            
+            print("\nMaking API call to Anthropic...")
             # Now try the actual call
             message = client.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=1000,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
@@ -223,44 +247,59 @@ def process_entry(entry_text, category):
             
             # Get the response text
             response_text = message.content[0].text.strip()
-            #print("Message received successfully")
+            print("\nAPI Response:")
+            print(response_text)
+            print("-" * 50)
+            
         except Exception as api_error:
-            print(f"API Error details: {str(api_error)}")
+            print(f"\nAPI Error details: {str(api_error)}")
             print(f"Error type: {type(api_error)}")
             raise Exception(f"Failed to call Anthropic API: {str(api_error)}")
         
         # Try to parse the JSON response
         try:
+            print("\nAttempting to parse JSON response...")
             result = extract_json_from_response(response_text)
-            # Ensure category is properly capitalized
-            if 'category' not in result:
-                result['category'] = category.capitalize()
+            print("\nParsed JSON result:")
+            print(json.dumps(result, indent=2))
+            
+            # Use the normalized category from the heading
+            result['category'] = normalized_category
             
             # Manually extract regimes and override the LLM's extraction
             regimes = extract_regimes(entry_text)
             if regimes:
                 result['Regime'] = regimes
             
+            print("\nFinal processed result:")
+            print(json.dumps(result, indent=2))
+            print("-" * 50)
+            
             return result
         except Exception as json_error:
             print(f"\nError parsing JSON response: {str(json_error)}")
+            print("Raw response that failed to parse:")
+            print(response_text)
             raise
     
     except Exception as e:
-        print(f"Error processing entry: {str(e)}")
+        print(f"\nError processing entry: {str(e)}")
         print(f"Entry text: {entry_text[:100]}...")
         # Extract regimes even in error case
         regimes = extract_regimes(entry_text)
         # Create a basic structured response
         name = entry_text.split(',')[0].strip() if ',' in entry_text else entry_text.split()[0]
-        return {
+        error_result = {
             "name": name,
             "notes": entry_text,
             "nationality": "Unknown",
-            "category": category.capitalize(),
+            "category": normalized_category,
             "Regime": regimes if regimes else [],
             "issue": True
         }
+        print("\nError fallback result:")
+        print(json.dumps(error_result, indent=2))
+        return error_result
 
 def main():
     # Get URL from user

@@ -79,7 +79,7 @@ CORONA FUN (3E5355) Crude Oil Tanker Panama flag; Vessel Registration Identifica
 <instructions>
 You will be converting entires from the OFAC's SDN list into a parseable JSON format. You can see examples of how to convert the raw data into JSON format above. Your output should be ONLY the JSON output, nothing else at all. 
 
-THe first field, 
+If you encounter any issues in processing, return the `issue` field as `true`. Entries will always contain a nationality or related country, based explicitly on their nationality or the location of the entity. 
 
 Follow the instructions above carefully, and use the examples to see how to find the information. Then, provide the output for the raw data below.
 </instructions>

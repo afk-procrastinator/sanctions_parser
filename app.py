@@ -1,11 +1,12 @@
-from flask import Flask, render_template, request, jsonify, send_file, session
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from utils.scrape_sanctions import scrape_sanctions_update
 from utils.parse_sanctions import parse_sanctions_text
 from utils.process_entries import extract_entries, process_entry, extract_regimes
+from utils.auth import verify_password
 import os
 import pandas as pd
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 from dotenv import load_dotenv
 import anthropic
@@ -57,7 +58,44 @@ def cached_scrape_sanctions_update(url):
     """Cached version of the scrape function"""
     return scrape_sanctions_update(url)
 
+def login_required(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # Check if already logged in
+    if session.get('logged_in'):
+        return redirect(url_for('index'))
+        
+    if request.method == 'POST':
+        password = request.form.get('password')
+        remember = request.form.get('remember', False)
+        
+        if verify_password(password):
+            session['logged_in'] = True
+            # Set session to permanent if remember me is checked
+            session.permanent = remember
+            # Set session lifetime based on remember me
+            if remember:
+                app.permanent_session_lifetime = timedelta(days=30)  # 30 days
+            else:
+                app.permanent_session_lifetime = timedelta(hours=1)  # 1 hour
+            return redirect(url_for('index'))
+        return render_template('login.html', error='Invalid password')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()  # Clear all session data
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     if request.method == 'POST':
         url = request.form.get('url')
@@ -217,6 +255,7 @@ def index():
     return render_template('index.html', step='initial')
 
 @app.route('/download/<format_type>')
+@login_required
 def download(format_type):
     result_hash = session.get('result_hash')
     url = session.get('url', '')
@@ -338,6 +377,7 @@ def download(format_type):
     return "Invalid format type", 400
 
 @app.route('/api/scrape', methods=['POST'])
+@login_required
 def api_scrape():
     data = request.json
     url = data.get('url')
@@ -350,6 +390,7 @@ def api_scrape():
 
 # Implement cache management for production use
 @app.route('/admin/clear-cache', methods=['POST'])
+@login_required
 def clear_cache():
     # Require an admin token for security
     token = request.form.get('token')
