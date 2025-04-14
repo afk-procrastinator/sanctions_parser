@@ -1,0 +1,1 @@
+<button type="button" class="btn btn-secondary ms-2" id="viewPdfDirectBtn"><i class="bi bi-file-pdf"></i> View PDF</button>

@@ -153,6 +153,9 @@
                     <div class="mb-3">
                         <button type="button" class="btn btn-primary" id="convertUrl">Convert to XML URL</button>
                         <button type="button" class="btn btn-success ms-2" id="fetchXmlBtn">Fetch XML Data</button>
+                        <button type="button" class="btn btn-secondary ms-2" id="viewPdfDirectBtn">
+                            <i class="bi bi-file-pdf"></i> View PDF
+                        </button>
                     </div>
                 </form>
                 
@@ -637,21 +640,7 @@
                 });
             });
 
-            // Handle View PDF button click
-            viewPdfBtn.addEventListener('click', function() {
-                const url = entityUrl.value.trim();
-                if (!url) {
-                    alert('Please enter a valid Federal Register URL first');
-                    return;
-                }
-                
-                const pdfUrl = convertToPdfUrl(url);
-                if (pdfUrl) {
-                    window.open(pdfUrl, '_blank');
-                }
-            });
-
-            // Convert Federal Register URL to PDF URL
+            // Function to convert Federal Register URL to PDF URL
             function convertToPdfUrl(url) {
                 try {
                     // Parse the input URL
@@ -683,6 +672,34 @@
                     return null;
                 }
             }
+
+            // Direct PDF view button in the form section
+            document.getElementById('viewPdfDirectBtn').addEventListener('click', function() {
+                const url = entityUrl.value.trim();
+                if (!url) {
+                    alert('Please enter a valid Federal Register URL first');
+                    return;
+                }
+                
+                const pdfUrl = convertToPdfUrl(url);
+                if (pdfUrl) {
+                    window.open(pdfUrl, '_blank');
+                }
+            });
+
+            // Handle view PDF button in the entities section
+            document.getElementById('viewPdfBtn').addEventListener('click', function() {
+                const url = entityUrl.value.trim();
+                if (!url) {
+                    alert('Please enter a valid Federal Register URL first');
+                    return;
+                }
+                
+                const pdfUrl = convertToPdfUrl(url);
+                if (pdfUrl) {
+                    window.open(pdfUrl, '_blank');
+                }
+            });
         });
     </script>
 </body>
