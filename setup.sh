@@ -23,7 +23,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         echo -e "${YELLOW}Installing Python...${NC}"
         brew install python
     fi
-    
+
     # Install pip if not installed
     if ! command -v pip3 &> /dev/null; then
         echo -e "${YELLOW}Installing pip...${NC}"
@@ -31,19 +31,30 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         python3 get-pip.py
         rm get-pip.py
     fi
+
+    # Install git if not installed
+    if ! command -v git &> /dev/null; then
+        echo -e "${YELLOW}Installing git...${NC}"
+        brew install git
+    fi
 fi
 
-# Create virtual environment
-echo -e "${YELLOW}Creating virtual environment...${NC}"
-python3 -m venv .venv
+# Check for any git changes and pull from remote
+if [ -d ".git" ]; then
+    echo -e "${YELLOW}Checking for git changes...${NC}"
+    git pull
+fi
+
+# Create virtual environment if it doesn't exist
+echo -e "${YELLOW}Checking for virtual environment...${NC}"
+if [ ! -d ".venv" ]; then
+    echo -e "${YELLOW}Creating virtual environment...${NC}"
+    python3 -m venv .venv
+fi
 
 # Activate virtual environment
 echo -e "${YELLOW}Activating virtual environment...${NC}"
 source .venv/bin/activate
-
-# Upgrade pip
-echo -e "${YELLOW}Upgrading pip...${NC}"
-pip install --upgrade pip
 
 # Install dependencies
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
@@ -60,16 +71,13 @@ fi
 # Make the script executable
 chmod +x app.py
 
-echo -e "${GREEN}Setup complete!${NC}"
-echo -e "${YELLOW}To run the application:${NC}"
-echo "1. Run the application: python app.py"
-echo "2. Open your browser and go to: http://127.0.0.1:5000"
+# Checking to see if anything's running on port 5000 and killing it
+if lsof -i :5000; then
+    echo -e "${YELLOW}Killing process on port 5000...${NC}"
+    lsof -i :5000 | awk '{print $2}' | xargs kill
+fi
 
-# Check if user wants to run the application now
-read -p "Would you like to run the application now? (y/n): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Starting the application...${NC}"
-    source .venv/bin/activate
-    python app.py
-fi 
+echo -e "${GREEN}Setup complete! Starting and opening browser...${NC}"
+python3 app.py
+wait 2
+open http://localhost:5000

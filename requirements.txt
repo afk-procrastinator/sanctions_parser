@@ -5,3 +5,4 @@ anthropic
 pandas
 flask
 gunicorn
+lxml

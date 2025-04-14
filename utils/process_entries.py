@@ -225,18 +225,18 @@ def process_entry(entry_text, category):
             
         # Load the prompt template
         prompt_template = load_prompt_template()
-        print("\nUsing prompt template:")
-        print(prompt_template)
-        print("-" * 50)
+        #print("\nUsing prompt template:")
+        #print(prompt_template)
+        #print("-" * 50)
         
         # Create the full prompt with examples and raw data
         prompt = prompt_template.replace('{{RAW_DATA}}', entry_text)
-        print("\nFull prompt being sent to API:")
-        print(prompt)
-        print("-" * 50)
+        #print("\nFull prompt being sent to API:")
+        #print(prompt)
+        #print("-" * 50)
         
         try:            
-            print("\nMaking API call to Anthropic...")
+            #print("\nMaking API call to Anthropic...")
             # Now try the actual call
             message = client.messages.create(
                 model="claude-3-5-haiku-20241022",
@@ -247,9 +247,9 @@ def process_entry(entry_text, category):
             
             # Get the response text
             response_text = message.content[0].text.strip()
-            print("\nAPI Response:")
-            print(response_text)
-            print("-" * 50)
+            #print("\nAPI Response:")
+            #print(response_text)
+            #print("-" * 50)
             
         except Exception as api_error:
             print(f"\nAPI Error details: {str(api_error)}")
@@ -271,9 +271,9 @@ def process_entry(entry_text, category):
             if regimes:
                 result['Regime'] = regimes
             
-            print("\nFinal processed result:")
-            print(json.dumps(result, indent=2))
-            print("-" * 50)
+            #print("\nFinal processed result:")
+            #print(json.dumps(result, indent=2))
+            #print("-" * 50)
             
             return result
         except Exception as json_error:

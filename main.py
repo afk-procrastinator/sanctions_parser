@@ -20,7 +20,7 @@ def main():
         
         # Run a test call to verify API connectivity
         test_response = client.messages.create(
-            model="claude-3-5-haiku-2024-10-22",
+            model="claude-3-5-haiku-20241022",
             max_tokens=10,
             messages=[{"role": "user", "content": "Test"}]
         )

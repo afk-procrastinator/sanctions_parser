@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entity List Processor</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        /* Custom styles for the app */
+        body {
+            padding-top: 20px;
+            padding-bottom: 50px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .app-header {
+            margin-bottom: 30px;
+        }
+        .loading {
+            text-align: center;
+            padding: 30px;
+        }
+        .loading-spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+        pre {
+            max-height: 400px;
+            overflow: auto;
+            font-size: 0.85rem;
+        }
+        .github-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-size: 2rem;
+            color: #333;
+        }
+        .github-link:hover {
+            color: #0d6efd;
+        }
+        
+        /* Table formatting for Entity List */
+        .country-header {
+            background-color: #f8f9fa !important;
+            font-weight: bold;
+            font-size: 1.2rem;
+            text-align: left;
+            padding: 12px !important;
+            border-top: 2px solid #000 !important;
+            border-bottom: 2px solid #000 !important;
+        }
+        .separator-row td {
+            height: 10px;
+            background-color: #e9ecef !important;
+            padding: 0 !important;
+        }
+        #entitiesTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        #entitiesTable td {
+            vertical-align: top;
+            padding: 10px 15px;
+            border: 1px solid #dee2e6;
+            word-break: break-word;
+        }
+        #entitiesTable th {
+            background-color: #e9ecef;
+            padding: 10px 15px;
+            border: 1px solid #dee2e6;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .entity-row td {
+            border-bottom: 1px solid #dee2e6;
+        }
+        .entity-name {
+            font-weight: bold;
+        }
+        .entity-aliases {
+            margin-top: 8px;
+            color: #555;
+        }
+        .entity-aliases span {
+            display: block;
+            padding-left: 20px;
+            position: relative;
+        }
+        .entity-aliases span:before {
+            content: "—";
+            position: absolute;
+            left: 0;
+        }
+        #entitiesTableBody tr:not(.table-secondary):not(.separator-row):hover {
+            background-color: #f2f7ff !important;
+        }
+        .entity-columns {
+            border-top: 1px solid #dee2e6;
+            border-bottom: 1px solid #dee2e6;
+            font-weight: bold;
+            text-align: center;
+            background-color: #f8f9fa;
+        }
+        /* Add JavaScript to handle strange patterns instead of CSS */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="my-4">Entity List Processor</h1>
+        
+        <!-- Navigation Bar -->
+        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/">CNAS Compliance Tool</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link" href="/sanctions">Sanctions</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" aria-current="page" href="/entity-list">Entity List</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Entity List URL Processor -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Entity List URL Processor</h5>
+            </div>
+            <div class="card-body">
+                <form id="entityUrlForm" method="post" action="{{ url_for('process_entity_url') }}">
+                    <div class="mb-3">
+                        <label for="entityUrl" class="form-label">Enter Federal Register URL</label>
+                        <input type="url" class="form-control" id="entityUrl" name="entityUrl" required
+                               placeholder="https://www.federalregister.gov/documents/2023/02/27/2023-03929/additions-of-entities-to-the-entity-list">
+                        <div class="form-text">Enter a URL from the Federal Register for entity list updates.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-primary" id="convertUrl">Convert to XML URL</button>
+                        <button type="button" class="btn btn-success ms-2" id="fetchXmlBtn">Fetch XML Data</button>
+                    </div>
+                </form>
+                
+                <div id="resultContainer" class="mt-4" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">XML URL</h6>
+                        </div>
+                        <div class="card-body">
+                            <p>Use this URL to fetch the XML data:</p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="xmlUrl" readonly>
+                                <button class="btn btn-outline-secondary" type="button" id="copyXmlUrl">
+                                    <i class="bi bi-clipboard"></i> Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <h5>How Entity List Processing Works</h5>
+                    <ul>
+                        <li>Enter a Federal Register URL containing entity list updates</li>
+                        <li>The system will convert it to the corresponding XML URL format</li>
+                        <li>Click "Fetch XML Data" to retrieve and display the raw XML content</li>
+                        <li>The data can then be processed to extract entity information</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- XML Content Display -->
+        <div class="card" id="xmlDataContainer" style="display: none;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Raw XML Data</h5>
+                <div>
+                    <!-- Buttons removed as processing is now automatic -->
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loadingXml" class="loading" style="display: none;">
+                    <div class="spinner-border loading-spinner text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3">Fetching XML data...</p>
+                </div>
+                <pre id="xmlContent"></pre>
+            </div>
+        </div>
+        
+        <!-- Entities Table Display -->
+        <div class="card mt-4" id="entitiesDataContainer" style="display: none;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Extracted Entities</h5>
+                <div>
+                    <button class="btn btn-sm btn-primary" id="downloadEntitiesBtn">
+                        <i class="bi bi-download"></i> Download as CSV
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loadingEntities" class="loading" style="display: none;">
+                    <div class="spinner-border loading-spinner text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3">Processing entities...</p>
+                </div>
+                
+                <div id="entitiesStats" class="alert alert-info mb-3" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>Total Entities:</strong> <span id="totalEntities">0</span>
+                        </div>
+                        <div class="col-md-8">
+                            <strong>Countries:</strong> <span id="countriesCount">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hidden div to store raw entities data for CSV export -->
+                <div id="entitiesDataJson" style="display: none;"></div>
+                
+                <div class="table-responsive">
+                    <table class="table table-bordered" id="entitiesTable">
+                        <thead>
+                            <tr class="entity-columns">
+                                <th style="width: 30%;">Entity</th>
+                                <th style="width: 15%;">Country</th>
+                                <th style="width: 20%;">License Requirement</th>
+                                <th style="width: 25%;">License Policy</th>
+                                <th style="width: 10%;">Federal Register Citation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="entitiesTableBody">
+                            <!-- Entities will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Display errors if any -->
+        {% if error %}
+        <div class="alert alert-danger mt-4">
+            {{ error }}
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- GitHub link in bottom right corner -->
+    <a href="https://github.com/afk-procrastinator/sanctions_parser" target="_blank" class="github-link" title="View on GitHub">
+        <i class="bi bi-github"></i>
+    </a>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const entityUrlForm = document.getElementById('entityUrlForm');
+            const entityUrl = document.getElementById('entityUrl');
+            const convertUrlBtn = document.getElementById('convertUrl');
+            const fetchXmlBtn = document.getElementById('fetchXmlBtn');
+            const resultContainer = document.getElementById('resultContainer');
+            const xmlUrlInput = document.getElementById('xmlUrl');
+            const copyXmlUrlBtn = document.getElementById('copyXmlUrl');
+            const xmlDataContainer = document.getElementById('xmlDataContainer');
+            const xmlContent = document.getElementById('xmlContent');
+            const loadingXml = document.getElementById('loadingXml');
+            const entitiesDataContainer = document.getElementById('entitiesDataContainer');
+            const loadingEntities = document.getElementById('loadingEntities');
+            const entitiesTableBody = document.getElementById('entitiesTableBody');
+            const entitiesStats = document.getElementById('entitiesStats');
+            const totalEntities = document.getElementById('totalEntities');
+            const countriesCount = document.getElementById('countriesCount');
+            const downloadEntitiesBtn = document.getElementById('downloadEntitiesBtn');
+            
+            // Function to convert Federal Register URL to XML URL
+            function convertToXmlUrl(url) {
+                try {
+                    // Parse the input URL
+                    const parsedUrl = new URL(url);
+                    
+                    // Check if it's a valid Federal Register URL
+                    if (!parsedUrl.hostname.includes('federalregister.gov')) {
+                        throw new Error('Not a valid Federal Register URL');
+                    }
+                    
+                    // Extract the path parts
+                    const pathParts = parsedUrl.pathname.split('/');
+                    
+                    // Check if URL format is as expected
+                    if (pathParts.length < 6 || pathParts[1] !== 'documents') {
+                        throw new Error('URL format not recognized');
+                    }
+                    
+                    // Extract date parts and document ID
+                    const year = pathParts[2];
+                    const month = pathParts[3];
+                    const day = pathParts[4];
+                    const docId = pathParts[5];
+                    
+                    // Create XML URL
+                    return `https://www.federalregister.gov/documents/full_text/xml/${year}/${month}/${day}/${docId}.xml`;
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                    return null;
+                }
+            }
+            
+            // Handle convert button click
+            convertUrlBtn.addEventListener('click', function() {
+                const url = entityUrl.value.trim();
+                if (!url) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+                
+                const xmlUrl = convertToXmlUrl(url);
+                if (xmlUrl) {
+                    xmlUrlInput.value = xmlUrl;
+                    resultContainer.style.display = 'block';
+                }
+            });
+            
+            // Handle fetch XML button click - Now fetches AND processes
+            fetchXmlBtn.addEventListener('click', function() {
+                const url = entityUrl.value.trim();
+                if (!url) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+
+                const xmlUrl = convertToXmlUrl(url);
+                if (!xmlUrl) {
+                    return; // Error message already shown by convertToXmlUrl
+                }
+
+                xmlUrlInput.value = xmlUrl;
+
+                // Show loading state for entities
+                entitiesDataContainer.style.display = 'block';
+                loadingEntities.style.display = 'block';
+                entitiesTableBody.innerHTML = '';
+                entitiesStats.style.display = 'none';
+                // Ensure previous errors are cleared
+                const existingError = entitiesDataContainer.querySelector('.alert-danger');
+                if (existingError) {
+                    existingError.remove();
+                }
+                // Also hide the now unused XML container and its loading state
+                xmlDataContainer.style.display = 'none';
+                loadingXml.style.display = 'none';
+
+
+                // Fetch XML data first
+                fetch('/api/fetch-xml', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: xmlUrl }),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Failed to fetch XML') });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Now process the fetched XML
+                    return fetch('/api/process-entity-xml', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ xml_content: data.xml }),
+                    });
+                })
+                .then(response => {
+                     if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Failed to process XML') });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide loading
+                    loadingEntities.style.display = 'none';
+
+                    if (data.status === 'success') {
+                        // Display statistics
+                        entitiesStats.style.display = 'block';
+                        totalEntities.textContent = data.result.total_entities;
+
+                        // Format countries
+                        const countries = data.result.countries;
+                        let countriesText = '';
+                        for (const [country, count] of Object.entries(countries)) {
+                            countriesText += `${country} (${count}), `;
+                        }
+                        countriesCount.textContent = countriesText.slice(0, -2);
+
+                        // Store raw entities data for CSV export
+                        const entitiesDataJson = document.getElementById('entitiesDataJson');
+                        entitiesDataJson.textContent = JSON.stringify(data.result.entities);
+
+                        // Populate entities table
+                        const entities = data.result.entities;
+                        let tableHtml = '';
+
+                        // Group entities by country for better organization
+                        const entitiesByCountry = {};
+                        entities.forEach(entity => {
+                            const country = entity.country || 'Unknown';
+                            if (!entitiesByCountry[country]) {
+                                entitiesByCountry[country] = [];
+                            }
+                            entitiesByCountry[country].push(entity);
+                        });
+
+                        // Generate table
+                        Object.entries(entitiesByCountry).forEach(([country, countryEntities]) => {
+                            if (!country || country.trim() === '') return;
+
+                            // Add entities for this country
+                            countryEntities.forEach(entity => {
+                                // Clean entity name and check for patterns to skip
+                                let cleanName = cleanEntityText(entity.name);
+                                if (!cleanName) return; // Skip if name is empty after cleaning
+
+                                // Format entity name and aliases
+                                let nameDisplay = `<div class=\"entity-name\">${cleanName}</div>`;
+
+                                if (entity.aliases && entity.aliases.length > 0) {
+                                    const aliasText = entity.aliases.length === 1 ? 'alias' :
+                                                     `${entity.aliases.length} aliases`;
+
+                                    nameDisplay += `<div class=\"entity-aliases\">a.k.a., the following ${aliasText}:`;
+
+                                    entity.aliases.forEach(alias => {
+                                        let cleanAlias = cleanEntityText(alias);
+                                        if (cleanAlias) {
+                                            nameDisplay += `<span>${cleanAlias}</span>`;
+                                        }
+                                    });
+
+                                    nameDisplay += `</div>`;
+                                }
+
+                                // Clean other fields
+                                const country = cleanEntityText(entity.country || '');
+                                const licenseReq = cleanEntityText(entity.license_requirement || '');
+                                const licensePolicy = cleanEntityText(entity.license_policy || '');
+                                const frCitation = cleanEntityText(entity.federal_register_citation || '');
+
+                                tableHtml += `
+                                    <tr class=\"entity-row\">
+                                        <td>${nameDisplay}</td>
+                                        <td>${country}</td>
+                                        <td>${licenseReq}</td>
+                                        <td>${licensePolicy}</td>
+                                        <td>${frCitation}</td>
+                                    </tr>
+                                `;
+                            });
+                        });
+
+                        entitiesTableBody.innerHTML = tableHtml;
+                    } else {
+                        // Show processing error
+                        const errorMsg = data.error || 'Unknown error processing XML';
+                        console.error('Error processing XML:', errorMsg);
+                        displayError(entitiesDataContainer, 'Error Processing XML', errorMsg, data.traceback);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching or processing entities:', error);
+                    loadingEntities.style.display = 'none';
+                    displayError(entitiesDataContainer, 'Network or Processing Error', error.message);
+                });
+            });
+            
+            // Handle copy button click
+            copyXmlUrlBtn.addEventListener('click', function() {
+                xmlUrlInput.select();
+                document.execCommand('copy');
+                
+                // Visual feedback for copy
+                const originalText = copyXmlUrlBtn.innerHTML;
+                copyXmlUrlBtn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+                setTimeout(() => {
+                    copyXmlUrlBtn.innerHTML = originalText;
+                }, 2000);
+            });
+            
+            // Helper function to clean up entity values
+            function cleanEntityText(text) {
+                if (!text) return '';
+                
+                // Remove leading â characters
+                text = text.replace(/^â/, '');
+                
+                // Remove strange patterns
+                if (text.includes('â*âââââââââ') || /^â\*â+\*â+\*â+\*â+\*â+\*$/.test(text)) {
+                    return '';
+                }
+                
+                return text;
+            }
+            
+            // Helper function to display errors within the entities container
+            function displayError(container, title, message, details = null) {
+                 // Ensure previous errors are cleared
+                const existingError = container.querySelector('.alert-danger');
+                if (existingError) {
+                    existingError.remove();
+                }
+
+                const errorHtml = `
+                    <div class=\"alert alert-danger\">
+                        <h5>${title}</h5>
+                        <p>${message}</p>
+                        ${details ? `<details><summary>Technical Details</summary><pre>${details}</pre></details>` : ''}
+                    </div>
+                `;
+                container.querySelector('.card-body').insertAdjacentHTML('afterbegin', errorHtml);
+            }
+            
+            // Handle download entities button click
+            downloadEntitiesBtn.addEventListener('click', function() {
+                // Get the raw entity data from the hidden div
+                const entitiesJson = document.getElementById('entitiesDataJson').textContent;
+                let entities = [];
+                try {
+                    entities = JSON.parse(entitiesJson || '[]');
+                } catch (e) {
+                    console.error("Error parsing stored entity data:", e);
+                    alert("Could not retrieve entity data for download.");
+                    return;
+                }
+
+                // Get the XML URL that was used to generate these entities
+                const xmlUrl = xmlUrlInput.value; // Get from the displayed XML URL input
+                
+                if (entities.length === 0) {
+                    alert('No entity data to download');
+                    return;
+                }
+                
+                if (!xmlUrl) {
+                    alert('Cannot determine the source URL for the data. Please fetch data first.');
+                    return;
+                }
+                
+                // Make a POST request to the backend endpoint
+                fetch('/api/download-entity-csv', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        entities: entities,
+                        xml_url: xmlUrl
+                    }),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        // Try to get error message from response body
+                        return response.json().then(err => { 
+                            throw new Error(err.error || `Server error: ${response.statusText}`);
+                        }).catch(() => {
+                             // If response body is not JSON or empty
+                            throw new Error(`Server error: ${response.statusText}`);
+                        });
+                    }
+                    // Get filename from Content-Disposition header
+                    const disposition = response.headers.get('Content-Disposition');
+                    console.log("[Debug] Received Content-Disposition:", disposition);
+                    let filename = 'entity_list.csv'; // Default filename
+                    if (disposition && disposition.indexOf('attachment') !== -1) {
+                        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                        const matches = filenameRegex.exec(disposition);
+                        if (matches != null && matches[1]) { 
+                            filename = matches[1].replace(/['"]/g, '');
+                        }
+                    }
+                    console.log("[Debug] Extracted filename:", filename);
+                    return response.blob().then(blob => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    // Create a link to download the file
+                    console.log("[Debug] Using filename for download:", filename);
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = filename; // Use filename from header
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                })
+                .catch(error => {
+                    console.error('Error downloading CSV:', error);
+                    alert(`Failed to download CSV: ${error.message}`);
+                });
+            });
+        });
+    </script>
+</body>
+</html> 
