@@ -216,8 +216,8 @@ def process_entry(entry_text, category):
         
         # Debug API key
         api_key = os.getenv("ANthropic_API_KEY")
-        if not api_key:
-            print("Warning: ANTHROPIC_API_KEY not found in environment variables")
+        #if not api_key:
+        #    print("Warning: ANTHROPIC_API_KEY not found in environment variables")
         
         # Check if client is properly initialized
         if client is None:

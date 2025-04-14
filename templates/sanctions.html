@@ -128,6 +128,13 @@
             </div>
         </div>
         
+        <!-- Page data for JavaScript -->
+        <div id="page-data" 
+             data-step="{{ step }}" 
+             data-has-processed-data="{% if processed_data %}true{% else %}false{% endif %}"
+             {% if session_id %}data-session-id="{{ session_id }}"{% endif %}>
+        </div>
+        
         <!-- Restart Button (visible on all steps except initial) -->
         {% if step != 'initial' %}
         <div class="text-end mb-3">
@@ -276,15 +283,74 @@
                     <p>Processing entries with the LLM. This may take a few minutes.</p>
                     <p>The page will automatically update when processing is complete.</p>
                     
-                    <!-- Progress bar will be inserted here by JavaScript -->
+                    <!-- Progress bar -->
                     <div class="progress mt-4 mb-2" style="height: 20px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             role="progressbar" style="width: 0%" 
+                        <div id="processingProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%;" 
                              aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
-                    <div class="text-center mt-2">Initializing...</div>
+                    <div id="processingStatusText" class="mt-2">Initializing...</div>
                 </div>
             </div>
+            
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const sessionId = '{{ session_id }}';
+                    const progressBar = document.getElementById('processingProgressBar');
+                    const statusText = document.getElementById('processingStatusText');
+                    
+                    if (sessionId) {
+                        const updateProgress = async () => {
+                            try {
+                                const response = await fetch(`/api/process-status/${sessionId}`);
+                                if (!response.ok) {
+                                    throw new Error('Failed to fetch status');
+                                }
+                                
+                                const statusData = await response.json();
+                                
+                                // Calculate progress percentage
+                                const percent = statusData.total > 0 
+                                    ? Math.round((statusData.processed / statusData.total) * 100) 
+                                    : 0;
+                                
+                                // Update progress bar
+                                progressBar.style.width = `${percent}%`;
+                                progressBar.setAttribute('aria-valuenow', percent);
+                                
+                                // Update status text
+                                if (statusData.status === 'complete') {
+                                    statusText.textContent = `Processing complete (${statusData.processed}/${statusData.total})`;
+                                    // Reload the page to show results
+                                    window.location.reload();
+                                    return;
+                                } else if (statusData.status === 'error') {
+                                    statusText.textContent = `Error: ${statusData.error || 'Unknown error'}`;
+                                    return;
+                                } else {
+                                    let message = `Processing ${statusData.processed}/${statusData.total} entries`;
+                                    if (statusData.current_category) {
+                                        message += ` (${statusData.current_category}: ${statusData.current_index})`;
+                                    }
+                                    statusText.textContent = message;
+                                    
+                                    // Poll again after 1 second
+                                    setTimeout(updateProgress, 1000);
+                                }
+                            } catch (error) {
+                                console.error('Error fetching status:', error);
+                                statusText.textContent = 'Error fetching status. Retrying...';
+                                
+                                // Retry after 2 seconds
+                                setTimeout(updateProgress, 2000);
+                            }
+                        };
+                        
+                        // Start polling for updates
+                        updateProgress();
+                    }
+                });
+            </script>
             {% elif processed_data %}
             <div class="card mb-4">
                 <div class="card-header bg-success text-white">
@@ -379,58 +445,103 @@
             const overlay = document.getElementById('loading-overlay');
             const loadingMessage = document.getElementById('loading-message');
             
-            // Start polling for status if session_id is available
-            {% if session_id is defined and session_id %}
-            const sessionId = "{{ session_id }}";
-            const statusCheckInterval = 1000; // Check every second
-            let statusCheckTimer;
+            // Get data from page data element
+            const pageData = document.getElementById('page-data');
+            const currentStep = pageData.getAttribute('data-step');
+            const hasProcessedData = pageData.getAttribute('data-has-processed-data') === 'true';
             
-            function checkProcessingStatus() {
-                fetch(`/api/processing-status?session_id=${sessionId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        // Update the loading message based on status
-                        if (data.status === 'complete') {
-                            // Processing is complete, reload the page to show results
-                            clearInterval(statusCheckTimer);
-                            // Get current URL parameters
-                            const url = new URLSearchParams(window.location.search).get('url');
-                            const result_hash = new URLSearchParams(window.location.search).get('result_hash');
-                            // Reload with all necessary parameters
-                            window.location.href = `/sanctions?step=processed&url=${encodeURIComponent(url)}&result_hash=${result_hash}`;
-                        } else if (data.status === 'error') {
-                            // Show error message
-                            loadingMessage.textContent = `Error: ${data.error || 'Unknown error occurred'}`;
-                            clearInterval(statusCheckTimer);
-                            setTimeout(() => {
-                                overlay.style.display = 'none';
-                            }, 3000);
-                        } else if (data.status === 'processing') {
-                            // Update progress bar if we have the progress elements
-                            const progressBar = document.querySelector('.progress-bar');
-                            const statusText = document.querySelector('.text-center.mt-2');
-                            if (progressBar && statusText) {
-                                const percent = Math.round((data.processed / data.total) * 100);
-                                progressBar.style.width = `${percent}%`;
-                                progressBar.setAttribute('aria-valuenow', percent);
-                                statusText.textContent = `Processing ${data.current_category} (${data.processed}/${data.total})`;
+            // Show loading overlay for processing step without processed data
+            if (currentStep === 'processed' && !hasProcessedData) {
+                // Show the loading overlay with progress indicator
+                loadingMessage.textContent = 'Processing entries with LLM. This may take a few minutes...';
+                overlay.style.display = 'flex';
+                
+                // Create progress indicator
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'mt-3 w-50';
+                
+                const progressBar = document.createElement('div');
+                progressBar.className = 'progress';
+                progressBar.style.height = '20px';
+                
+                const progressIndicator = document.createElement('div');
+                progressIndicator.className = 'progress-bar progress-bar-striped progress-bar-animated';
+                progressIndicator.style.width = '0%';
+                progressIndicator.setAttribute('role', 'progressbar');
+                progressIndicator.setAttribute('aria-valuenow', '0');
+                progressIndicator.setAttribute('aria-valuemin', '0');
+                progressIndicator.setAttribute('aria-valuemax', '100');
+                
+                const statusText = document.createElement('div');
+                statusText.className = 'text-center mt-2';
+                statusText.textContent = 'Initializing...';
+                
+                progressBar.appendChild(progressIndicator);
+                progressContainer.appendChild(progressBar);
+                progressContainer.appendChild(statusText);
+                
+                // Add the progress container to the loading overlay
+                overlay.appendChild(progressContainer);
+                
+                // Get session ID from the page data
+                const sessionId = pageData.getAttribute('data-session-id');
+                if (sessionId) {
+                    // Function to update progress bar based on status
+                    const updateProgress = async () => {
+                        try {
+                            const response = await fetch(`/api/process-status/${sessionId}`);
+                            if (!response.ok) {
+                                throw new Error('Failed to fetch status');
                             }
                             
-                            // Update main loading message
-                            loadingMessage.textContent = `Processing entries with LLM (${data.processed}/${data.total})...`;
+                            const statusData = await response.json();
+                            
+                            // Calculate progress percentage
+                            const percent = statusData.total > 0 
+                                ? Math.round((statusData.processed / statusData.total) * 100) 
+                                : 0;
+                            
+                            // Update progress bar
+                            progressIndicator.style.width = `${percent}%`;
+                            progressIndicator.setAttribute('aria-valuenow', percent);
+                            
+                            // Update status text
+                            if (statusData.status === 'complete') {
+                                statusText.textContent = `Processing complete (${statusData.processed}/${statusData.total})`;
+                                // Reload the page to show results
+                                window.location.reload();
+                                return;
+                            } else if (statusData.status === 'error') {
+                                statusText.textContent = `Error: ${statusData.error || 'Unknown error'}`;
+                                return;
+                            } else {
+                                let message = `Processing ${statusData.processed}/${statusData.total} entries`;
+                                if (statusData.current_category) {
+                                    message += ` (${statusData.current_category}: ${statusData.current_index})`;
+                                }
+                                statusText.textContent = message;
+                                
+                                // Poll again after 1 second
+                                setTimeout(updateProgress, 1000);
+                            }
+                        } catch (error) {
+                            console.error('Error fetching status:', error);
+                            statusText.textContent = 'Error fetching status. Retrying...';
+                            
+                            // Retry after 2 seconds
+                            setTimeout(updateProgress, 2000);
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error checking status:', error);
-                    });
+                    };
+                    
+                    // Start polling for updates
+                    updateProgress();
+                } else {
+                    // If no session ID, fall back to auto-refresh
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 5000);
+                }
             }
-            
-            // Start periodic checking
-            statusCheckTimer = setInterval(checkProcessingStatus, statusCheckInterval);
-            
-            // Check immediately
-            checkProcessingStatus();
-            {% endif %}
 
             // Handle scrape form submission
             const scrapeForm = document.getElementById('scrapeForm');

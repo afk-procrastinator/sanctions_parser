@@ -30,7 +30,7 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24))
 try:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        print("Warning: ANTHROPIC_API_KEY not found in environment variables")
+        #print("Warning: ANTHROPIC_API_KEY not found in environment variables")
         client = None
     else:
         client = anthropic.Anthropic(api_key=api_key)
@@ -183,93 +183,7 @@ def index():
         }
         
         # Process entries in background thread to avoid blocking
-        def process_entries_background():
-            try:
-                # Process each category and entry in batches
-                total_processed = 0
-                processed_data = []
-                
-                for category, entry_list in entries.items():
-                    # Update status for new category
-                    cache[f"status_{session_id}"] = {
-                        "status": "processing",
-                        "processed": total_processed,
-                        "total": sum(len(entries_list) for entries_list in entries.values()),
-                        "current_category": category,
-                        "current_index": 0
-                    }
-                    
-                    for i, entry_text in enumerate(entry_list):
-                        try:
-                            # Skip empty entries
-                            if not entry_text.strip():
-                                continue
-                            
-                            # Update processing status
-                            cache[f"status_{session_id}"] = {
-                                "status": "processing",
-                                "processed": total_processed,
-                                "total": sum(len(entries_list) for entries_list in entries.values()),
-                                "current_category": category,
-                                "current_index": i + 1
-                            }
-                            
-                            # Check if individual entry is cached
-                            entry_cache_key = f"entry_{hash(entry_text)}_{category}"
-                            if entry_cache_key in cache:
-                                processed_entry = cache[entry_cache_key]
-                            else:
-                                # Process the entry using existing function
-                                processed_entry = process_entry(entry_text, category)
-                                # Cache the processed entry
-                                cache[entry_cache_key] = processed_entry
-                            
-                            processed_data.append(processed_entry)
-                            total_processed += 1
-                        except Exception as e:
-                            print(f"Error processing entry: {e}")
-                            # Add a fallback entry
-                            processed_data.append({
-                                "name": entry_text.split(',')[0] if ',' in entry_text else entry_text[:50],
-                                "nationality": "Unknown",
-                                "category": category.capitalize(),
-                                "Regime": extract_regimes(entry_text),
-                                "issue": True,
-                                "notes": entry_text
-                            })
-                            total_processed += 1
-                
-                # Update status to complete
-                cache[f"status_{session_id}"] = {
-                    "status": "complete",
-                    "processed": total_processed,
-                    "total": sum(len(entries_list) for entries_list in entries.values())
-                }
-                
-                # Cache the processed results
-                cache[f"processed_{result_hash}"] = processed_data
-                
-            except Exception as e:
-                print(f"Background processing error: {e}")
-                # Update status to error
-                cache[f"status_{session_id}"] = {
-                    "status": "error",
-                    "error": str(e)
-                }
-        
-        # Check if Anthropic client is available
-        if client is None:
-            error_msg = "Anthropic API key is invalid or not configured. Check your .env file."
-            print(error_msg)
-            return render_template('sanctions.html', 
-                                  error=error_msg,
-                                  url=url,
-                                  step='confirm')
-        
-        # Start the background processing thread
-        processing_thread = threading.Thread(target=process_entries_background)
-        processing_thread.daemon = True
-        processing_thread.start()
+        process_entries_background(session_id, entries, result_hash)
         
         # Return template with loading state
         return render_template('sanctions.html', 
@@ -344,18 +258,6 @@ def api_scrape():
     # Use cached version if available
     result = cached_scrape_sanctions_update(url)
     return jsonify({"result": result})
-
-@app.route('/api/processing-status', methods=['GET'])
-def processing_status():
-    """Get the current processing status for a job"""
-    session_id = request.args.get('session_id')
-    if not session_id:
-        return jsonify({"error": "Session ID is required"}), 400
-    
-    status_key = f"status_{session_id}"
-    status = cache.get(status_key, {"status": "not_found"})
-    
-    return jsonify(status)
 
 @app.route('/api/fetch-xml', methods=['POST'])
 def fetch_xml():
@@ -432,6 +334,18 @@ def process_entity_xml():
             'error': str(e),
             'traceback': error_traceback if app.debug else None
         }), 500
+
+@app.route('/api/process-status/<session_id>', methods=['GET'])
+def process_status(session_id):
+    """API endpoint to get the current status of a processing job"""
+    if not session_id:
+        return jsonify({"error": "Session ID is required"}), 400
+    
+    status_data = cache.get(f"status_{session_id}")
+    if not status_data:
+        return jsonify({"error": "Processing session not found"}), 404
+    
+    return jsonify(status_data)
 
 @app.route('/process-entity-url', methods=['POST'])
 def process_entity_url():
@@ -516,8 +430,196 @@ def download_entity_csv():
 
 @app.route('/sanctions')
 def sanctions_redirect():
-    """Redirect /sanctions to the main index page."""
-    return redirect(url_for('index'))
+    """Handle sanctions route with query parameters."""
+    step = request.args.get('step', 'initial')
+    
+    if step == 'overview':
+        # Get data from request args
+        url = request.args.get('url')
+        result_hash = request.args.get('result_hash')
+        
+        if not result_hash:
+            return render_template('sanctions.html', 
+                                  error="Invalid request. Please start over.",
+                                  step='initial')
+        
+        # Get data from cache
+        result = cache.get(f"result_{result_hash}", "")
+        counts = cache.get(f"counts_{result_hash}", {})
+        
+        return render_template('sanctions.html', 
+                              result=result, 
+                              url=url,
+                              counts=counts,
+                              step='overview')
+    
+    elif step == 'confirm':
+        # Get data from request args
+        result_hash = request.args.get('result_hash')
+        url = request.args.get('url', '')
+        
+        if not result_hash:
+            return render_template('sanctions.html', 
+                                  error="Invalid request. Please start over.",
+                                  step='initial')
+        
+        # Get data from cache
+        result = cache.get(f"result_{result_hash}", "")
+        counts = cache.get(f"counts_{result_hash}", {})
+        
+        # Extract entries by category (only if not already cached)
+        entries_key = f"entries_{result_hash}"
+        if entries_key not in cache:
+            entries = extract_entries(result)
+            cache[entries_key] = entries
+        else:
+            entries = cache[entries_key]
+        
+        return render_template('sanctions.html', 
+                              result=result, 
+                              url=url,
+                              counts=counts,
+                              entries=entries,
+                              step='confirm')
+    
+    elif step == 'processed':
+        # Get data from request args
+        result_hash = request.args.get('result_hash')
+        url = request.args.get('url', '')
+        
+        if not result_hash:
+            return render_template('sanctions.html', 
+                                  error="Invalid request. Please start over.",
+                                  step='initial')
+        
+        # Get cached data
+        result = cache.get(f"result_{result_hash}", "")
+        entries = cache.get(f"entries_{result_hash}", {})
+        
+        # Check if already processed
+        processed_key = f"processed_{result_hash}"
+        if processed_key in cache:
+            processed_data = cache[processed_key]
+            return render_template('sanctions.html', 
+                                  result=result, 
+                                  url=url,
+                                  result_hash=result_hash,
+                                  processed_data=processed_data,
+                                  step='processed')
+        
+        # Check if Anthropic client is available
+        if client is None:
+            error_msg = "Anthropic API key is invalid or not configured. Check your .env file."
+            print(error_msg)
+            return render_template('sanctions.html', 
+                                  error=error_msg,
+                                  url=url,
+                                  step='confirm')
+        
+        # Initial step for processing - render the template with session ID
+        session_id = str(uuid.uuid4())
+        # Store initial status in cache
+        cache[f"status_{session_id}"] = {
+            "status": "starting",
+            "processed": 0,
+            "total": sum(len(entries_list) for entries_list in entries.values()),
+            "current_category": "",
+            "current_index": 0
+        }
+        
+        # Start background processing
+        processing_thread = threading.Thread(
+            target=process_entries_background, 
+            args=(session_id, entries, result_hash),
+            daemon=True
+        )
+        processing_thread.start()
+        
+        return render_template('sanctions.html',
+                              result=result,
+                              url=url,
+                              result_hash=result_hash,
+                              session_id=session_id,
+                              step='processed')
+    
+    else:
+        # Default initial step
+        return render_template('sanctions.html', step='initial')
+
+# Process entries in a background thread
+def process_entries_background(session_id, entries, result_hash):
+    try:
+        # Process each category and entry in batches
+        total_processed = 0
+        processed_data = []
+        
+        for category, entry_list in entries.items():
+            # Update status for new category
+            cache[f"status_{session_id}"] = {
+                "status": "processing",
+                "processed": total_processed,
+                "total": sum(len(entries_list) for entries_list in entries.values()),
+                "current_category": category,
+                "current_index": 0
+            }
+            
+            for i, entry_text in enumerate(entry_list):
+                try:
+                    # Skip empty entries
+                    if not entry_text.strip():
+                        continue
+                    
+                    # Update processing status
+                    cache[f"status_{session_id}"] = {
+                        "status": "processing",
+                        "processed": total_processed,
+                        "total": sum(len(entries_list) for entries_list in entries.values()),
+                        "current_category": category,
+                        "current_index": i + 1
+                    }
+                    
+                    # Check if individual entry is cached
+                    entry_cache_key = f"entry_{hash(entry_text)}_{category}"
+                    if entry_cache_key in cache:
+                        processed_entry = cache[entry_cache_key]
+                    else:
+                        # Process the entry using existing function
+                        processed_entry = process_entry(entry_text, category)
+                        # Cache the processed entry
+                        cache[entry_cache_key] = processed_entry
+                    
+                    processed_data.append(processed_entry)
+                    total_processed += 1
+                except Exception as e:
+                    print(f"Error processing entry: {e}")
+                    # Add a fallback entry
+                    processed_data.append({
+                        "name": entry_text.split(',')[0] if ',' in entry_text else entry_text[:50],
+                        "nationality": "Unknown",
+                        "category": category.capitalize(),
+                        "Regime": extract_regimes(entry_text),
+                        "issue": True,
+                        "notes": entry_text
+                    })
+                    total_processed += 1
+        
+        # Update status to complete
+        cache[f"status_{session_id}"] = {
+            "status": "complete",
+            "processed": total_processed,
+            "total": sum(len(entries_list) for entries_list in entries.values())
+        }
+        
+        # Cache the processed results
+        cache[f"processed_{result_hash}"] = processed_data
+        
+    except Exception as e:
+        print(f"Background processing error: {e}")
+        # Update status to error
+        cache[f"status_{session_id}"] = {
+            "status": "error",
+            "error": str(e)
+        }
 
 if __name__ == '__main__':
     app.run(debug=True) 
