@@ -78,6 +78,11 @@ if lsof -i :5000; then
 fi
 
 echo -e "${GREEN}Setup complete! Starting and opening browser...${NC}"
-python3 app.py
-wait 2
-open http://localhost:5000
+# Run the Flask app in the background
+flask run &
+
+# Wait for the server to start
+sleep 2
+
+# Open the browser
+open http://127.0.0.1:5000
