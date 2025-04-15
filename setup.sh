@@ -58,7 +58,7 @@ source .venv/bin/activate
 
 # Install dependencies
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
