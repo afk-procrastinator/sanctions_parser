@@ -79,7 +79,7 @@ fi
 
 echo -e "${GREEN}Setup complete! Starting and opening browser...${NC}"
 # Run the Flask app in the background
-flask run &
+python3 app.py &
 
 # Wait for the server to start
 sleep 2
